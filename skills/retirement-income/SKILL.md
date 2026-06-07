@@ -1,7 +1,7 @@
 ---
 name: retirement-income
-version: 1.1.0
-description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, or whether they have estate-tax exposure — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?".
+version: 1.2.0
+description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, or how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?".
 ---
 
 # Retirement Income
@@ -16,7 +16,7 @@ Read-only.
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -114,6 +114,20 @@ analyze_guaranteed_income({
   decision_type: 'pension_election', lump_sum: 600000, monthly_benefit: 3200,
   current_age: 63, life_expectancy: 90, filing_status: 'married_joint'
 })
+```
+
+### "Can I build a guaranteed income floor / bond ladder for the first N years?" → `analyze_bond_ladder`
+Builds a Treasury/TIPS ladder to **floor** the first N years of retirement spending — cost today,
+per-rung maturities and face values, real-vs-nominal coverage, and what % of desired spend it
+guarantees. A direct complement to `analyze_withdrawal_strategy`: the ladder floors the first N
+years (sequence-of-returns protection), while the withdrawal strategy handles the market-funded
+remainder. Server owns all yield / inflation defaults and surfaces them via `assumed_defaults[]`.
+REQUIRED: `annual_spend`, `years`. Optional: `ladder_type` (`tips` | `nominal` | `mixed`),
+`real_yield`, `inflation_rate`, `existing_income_annual`, `nominal_yield`, `swr`, `filing_status`,
+`state_flat_rate`, `current_age`, `start_year`, `tax_year`, or `plan_id`.
+
+```
+analyze_bond_ladder({ annual_spend: 60000, years: 10, ladder_type: 'tips' })
 ```
 
 ## Step 3 — Surface results honestly
