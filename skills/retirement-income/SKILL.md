@@ -30,6 +30,8 @@ claude mcp add --transport http planfi https://ai.planfi.app/mcp
 
 ## Step 1 — (Optional but preferred) build a plan first to chain context + get a share link
 
+> **Feed it into the forecast (not just plan_id chaining):** `generate_financial_plan` now accepts `guaranteed_income` and `bond_ladder` directly as plan inputs, so they flow into net worth, FIRE %, and Monte-Carlo backtesting — the income floor reduces the portfolio-funded spend. Use the standalone analyze tools below for a focused what-if; pass the feature into the plan to see its effect on the whole household forecast.
+
 If the user has (or wants) a full household model, call **`generate_financial_plan`** once and
 **capture the returned `plan_id`**. **All four** retirement-income tools accept `{ plan_id }` (plus
 inline overrides), so they can resolve age, balances, spend, and income from the saved plan instead
