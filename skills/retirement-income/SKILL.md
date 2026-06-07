@@ -1,6 +1,6 @@
 ---
 name: retirement-income
-version: 1.0.0
+version: 1.1.0
 description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, or whether they have estate-tax exposure — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?".
 ---
 
@@ -16,8 +16,8 @@ Read-only.
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, plus optional `generate_financial_plan` (for `plan_id` chaining +
-a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
+`analyze_estate_exposure`, `analyze_guaranteed_income`, plus optional `generate_financial_plan`
+(for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
 If they're NOT available, tell the user to connect the MCP, then continue:
@@ -97,12 +97,34 @@ input.
 analyze_estate_exposure({ net_worth: 14000000, current_age: 60 })
 ```
 
+### "Should I take the pension lump sum or the monthly annuity? Is a SPIA/QLAC worth it?" → `analyze_guaranteed_income`
+Compares a guaranteed lifetime income stream against its alternative (a pension lump sum, or a DIY
+portfolio drawn at a safe withdrawal rate), returning the present-value comparison, the
+breakeven/longevity age, the real income floor it buys, the after-tax monthly income, and a
+recommendation. Handles both a **pension election** (lump sum vs lifetime monthly) and an **annuity
+purchase** (SPIA, or a QLAC with RMD-deferral on the premium).
+KEY PARAMS: `decision_type` (`'pension_election'` | `'spia'` | `'qlac'`, default `pension_election`);
+`lump_sum` (the pension lump sum, or the annuity premium); `monthly_benefit` (the lifetime monthly
+payout). Optional: `current_age`, `life_expectancy`, `filing_status`, `payout_start_age`, `cola`,
+`discount_rate`, `expected_return` (DIY return), `desired_annual_spend` (for income-floor % of spend),
+`other_taxable_income`, `tax_year`, or `plan_id` to derive age/filing/income from a saved plan.
+
+```
+analyze_guaranteed_income({
+  decision_type: 'pension_election', lump_sum: 600000, monthly_benefit: 3200,
+  current_age: 63, life_expectancy: 90, filing_status: 'married_joint'
+})
+```
+
 ## Step 3 — Surface results honestly
 
 For whichever tool you called:
 - **Lead with the headline** — the recommended drawdown order + tax drag / longevity; the recommended
   Social Security claim age + breakeven age; the annual ACA bridge cost (net of subsidy) to age 65;
-  or the projected taxable estate + estimated estate tax.
+  the projected taxable estate + estimated estate tax; or — for `analyze_guaranteed_income` — the
+  present-value comparison (lifetime income vs lump-sum/premium) with the net advantage, the
+  breakeven age vs your longevity age, the real income floor it buys (and what % of your desired
+  spend that covers), and the lump-sum-vs-lifetime / buy-annuity-vs-keep-invested recommendation.
 - **Read back `disclosures.key_assumptions`** verbatim. These tools do **not** emit a structured
   `assumed_defaults[]` array — instead they apply silent Zod defaults (e.g. FRA 67, life expectancy
   ~90, growth ~5%, filing status, RMD age, exemption scenario) and expose what they assumed only as
@@ -142,7 +164,19 @@ net annual premium after subsidy and how it changes if MAGI rises; flag the subs
 interaction with any Roth conversions / withdrawals, and chain `analyze_withdrawal_strategy` to keep
 MAGI in the subsidy band. Read back key_assumptions (household size, state, Medicare age 65).
 
-*(Both examples use fictional figures — never reuse a real user's numbers in documentation.)*
+**3.** *"My employer is offering a $600k lump sum or $3,200/mo for life — which should I take? And
+would a SPIA make more sense?"*
+→ `analyze_guaranteed_income({ mode: 'pension', lump_sum: 600000, pension_monthly: 3200,
+current_age: 63 })`. Lead with the PV comparison (lifetime monthly vs the lump sum) and the net
+advantage, then the breakeven age vs the assumed longevity age, and the real income floor the
+monthly buys. Read back the structured `assumed_defaults[]` (discount rate, DIY return, SWR, life
+expectancy, survivor simplification). To compare a SPIA instead, re-run with `mode: 'annuity'`,
+`premium`, and `annuity_monthly`; for a QLAC add `is_qlac: true` to see the RMD deferred on the
+premium. Then chain the **tax-optimizer** skill — turning on pension income shifts your marginal
+bracket and changes your Roth-conversion room in the pre-RMD gap years — and
+`generate_financial_plan` for a sharable link.
+
+*(All three examples use fictional figures — never reuse a real user's numbers in documentation.)*
 
 ## Notes
 
@@ -156,6 +190,9 @@ MAGI in the subsidy band. Read back key_assumptions (household size, state, Medi
 - These four tools surface assumptions as **prose in `disclosures.key_assumptions`**, not a
   structured `assumed_defaults[]`, and they do **not** return a `share_url` — chain
   `generate_financial_plan` for a sharable link. (Server follow-up tracked in `SKILL_AUTHORING.md`.)
+- **`analyze_guaranteed_income` is the exception:** unlike its four prose-only siblings, it **does**
+  emit a structured `assumed_defaults[]` array (so you can read back each silent default
+  individually) **and** returns a `share_url` when you pass it a `plan_id`. Surface both directly.
 - Decumulation is tax-driven — the natural neighbor is the **tax-optimizer** skill (Roth conversion
   ladders, multi-year tax timing) during low-income gap years.
 - Not financial or tax advice. Planning estimates only.
