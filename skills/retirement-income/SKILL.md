@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -128,6 +128,24 @@ analyze_guaranteed_income({
   current_age: 63, life_expectancy: 90, filing_status: 'married_joint'
 })
 ```
+
+### "Should I buy a fixed-indexed / RILA / MYGA / variable annuity (GLWB) — and how is a non-qualified annuity taxed?" → `analyze_annuity_products`
+Evaluates **accumulation-phase** annuity products beyond a level/COLA immediate stream — a **MYGA**
+(multi-year guaranteed fixed rate), a **FIA** (fixed-indexed, cap / participation / spread crediting,
+principal-protected), a **RILA** (registered index-linked, buffer/floor downside), or a **VA with a
+GLWB** rider (variable subaccount + a guaranteed-lifetime-withdrawal rollup) — projects the
+accumulation value and effective credited rate, computes the **non-qualified exclusion-ratio tax**
+(IRC §72) and **1035 exchanges**, and compares the product against keeping the money invested DIY,
+returning a recommendation. The server owns every crediting/fee/rate default and reports them in
+`assumed_defaults[]` — pass only what the user states.
+
+```
+analyze_annuity_products({ product_type: 'fia', premium: 250000, current_age: 60, payout_start_age: 67, cap_rate: 0.09, is_qualified: false })
+```
+
+This is the deferred/accumulation companion to `analyze_guaranteed_income` (which handles the
+immediate SPIA/QLAC/pension-election decision) and pairs with `analyze_withdrawal_strategy` (how the
+annuity income fits the broader tax-smart drawdown order).
 
 ### "Can I build a guaranteed income floor / bond ladder for the first N years?" → `analyze_bond_ladder`
 Builds a Treasury/TIPS ladder to **floor** the first N years of retirement spending — cost today,
