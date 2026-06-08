@@ -1,6 +1,6 @@
 # retirement-income (Claude Agent Skill)
 
-Plan retirement decumulation: tax-smart withdrawal order, Social Security claiming age, ACA healthcare bridge before Medicare, and estate-tax exposure. Thin orchestration over the planfi MCP.
+Plan retirement decumulation: tax-smart withdrawal order, dynamic/variable spending strategies (Guyton-Klinger guardrails, VPW, spending smile, bucket+buffer vs static 4% SWR), Social Security claiming age, ACA healthcare bridge before Medicare, guaranteed income, a bond/TIPS ladder income floor, long-term-care cost exposure, and estate-tax exposure. Thin orchestration over the planfi MCP.
 
 It's a **thin orchestration layer** over the public **planfi MCP** (`https://ai.planfi.app/mcp`,
 public, no auth) — all the math and financial logic live server-side. The skill itself bundles no

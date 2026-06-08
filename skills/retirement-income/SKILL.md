@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -162,6 +162,26 @@ KEY PARAMS: `current_age`; `strategy` (`self_insure` | `traditional` | `hybrid`)
 analyze_long_term_care({ current_age: 60, care_type: 'assisted_living', strategy: 'self_insure', married: true })
 ```
 
+### "How much should I spend each year?" → `analyze_spending_strategy`
+A spending-**rate** engine that layers on top of the account-**order** question (`analyze_withdrawal_strategy`):
+it decides *how much* to pull each year, not *which account* to pull it from. Compares dynamic spending
+rules against a static 4% SWR baseline — **Guyton-Klinger guardrails** (raise spending in prosperity
+years, cut it when the withdrawal rate drifts above a capital-preservation band), **VPW** (variable
+percentage withdrawal — spend a horizon-based fraction that rises as the horizon shrinks),
+the **spending smile** (Blanchett — real spending declines through the go-go years, then ticks back up
+late for health costs), and a **bucket+buffer** strategy (hold N years of cash, spend it in down
+markets so you never sell equities low, refill in up years). Reports the year-by-year schedule,
+spend volatility vs flat 4%, the number of raises/cuts, RMD-floor years, depletion risk, and the
+extra lifetime spending vs the constant-4% comparator. Tax-agnostic in v1 — pair with
+`analyze_withdrawal_strategy` for the tax-smart account order and `run_backtesting` for sequence risk.
+KEY PARAMS: `portfolio_balance`, `annual_spend`, `current_age`, `years`. Optional: `strategy`
+(`guardrails` | `vpw` | `smile` | `bucket` | `constant_pct`), guardrail bands, raise/cut percentages,
+`birth_year` (RMD floor), `filing_status`, `tax_year`, `plan_id`, `overrides`.
+
+```
+analyze_spending_strategy({ portfolio_balance: 1500000, annual_spend: 60000, current_age: 62, years: 30 })
+```
+
 ## Step 3 — Surface results honestly
 
 For whichever tool you called:
@@ -188,7 +208,9 @@ For whichever tool you called:
   `optimize_social_security` / `generate_financial_plan`; `analyze_long_term_care` →
   `analyze_insurance_needs` / `analyze_survivor_stress_test` / `analyze_guaranteed_income` /
   `analyze_bond_ladder`. (`optimize_social_security`, `analyze_healthcare_bridge`, and
-  `analyze_estate_exposure` currently emit no outgoing `next_actions` edges.)
+  `analyze_estate_exposure` currently emit no outgoing `next_actions` edges.) `analyze_spending_strategy`
+  (the spend-*amount* question) is the natural companion to `analyze_withdrawal_strategy` (the
+  account-*order* question) and to `run_backtesting` (sequence-of-returns risk on the chosen rule).
 - **For a share link:** `optimize_social_security` always returns a `share_url`;
   `analyze_estate_exposure`, `analyze_withdrawal_strategy`, `analyze_healthcare_bridge`,
   `analyze_guaranteed_income`, `analyze_bond_ladder`, and `analyze_long_term_care` return a
@@ -271,4 +293,8 @@ pre-Medicare gap.
   `generate_financial_plan`.
 - Decumulation is tax-driven — the natural neighbor is the **tax-optimizer** skill (Roth conversion
   ladders, multi-year tax timing) during low-income gap years.
+- Two distinct decumulation questions pair up: `analyze_withdrawal_strategy` answers the account
+  **order** (which account to draw, tax-smart), while `analyze_spending_strategy` answers the spend
+  **amount** (Guyton-Klinger guardrails, VPW, spending smile, bucket+buffer vs a static 4% SWR). Run
+  both, then `run_backtesting` to stress the chosen spending rule against historical sequence risk.
 - Not financial or tax advice. Planning estimates only.
