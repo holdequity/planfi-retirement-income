@@ -1,6 +1,6 @@
 ---
 name: retirement-income
-version: 1.4.0
+version: 1.5.0
 description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection), or how to handle long-term-care cost exposure (self-insure vs an LTC/hybrid policy, and the hit to a surviving spouse) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?", "will long-term care wipe out my survivor's plan? should I self-insure or buy an LTC/hybrid policy?".
 ---
 
@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -143,6 +143,27 @@ REQUIRED: `annual_spend`, `years`. Optional: `ladder_type` (`tips` | `nominal` |
 analyze_bond_ladder({ annual_spend: 60000, years: 10, ladder_type: 'tips' })
 ```
 
+### "How do I ladder CDs / I-Bonds / EE bonds for safe near-term cash?" → `analyze_cash_ladder`
+The **mass-market complement to `analyze_bond_ladder`**: instead of brokerage Treasuries/TIPS, this
+ladders the FDIC-insured and savings-bond vehicles real conservative savers actually use — **CD
+ladders** (brokered vs bank, early-withdrawal penalty, callable-call/reinvestment risk), **I-Bonds**
+(fixed + variable composite rate, $10k annual purchase cap, federal tax-deferral + state exemption),
+and **Series EE bonds** (the 20-year guaranteed double). Returns per-rung CD maturities, the blended
+APY, annual maturing principal (the liquidity story), the savings-bond values at your hold horizon
+(with over-cap flags), the FDIC-insured flag, and a tax block that surfaces the asymmetry — CD
+interest is annually taxable and **state-taxable**, while Treasury/savings-bond interest is
+**state-exempt** and federally **tax-deferred** until redemption. Use it for the near-term safe-cash
+sleeve; use `analyze_bond_ladder` for the brokerage Treasury/TIPS floor.
+REQUIRED: `annual_need`, `years`. Optional: `vehicle` (`cd` | `ibond` | `ee` | `mixed`), `cd_type`
+(`brokered` | `bank`, default `brokered`), `cd_yield`, `callable`, `early_withdrawal_penalty_months`,
+`ibond_fixed_rate`, `ibond_variable_rate`, `ee_doubling`, `annual_purchase_cap`, `inflation_rate`,
+`existing_income_annual`, `filing_status`, `state_flat_rate`, `swr`, `start_year`, `current_age`,
+`tax_year`, or `plan_id`.
+
+```
+analyze_cash_ladder({ annual_need: 40000, years: 5, vehicle: 'cd', cd_type: 'brokered' })
+```
+
 ### "Will long-term care wipe out my plan? Should I self-insure or buy a policy?" → `analyze_long_term_care`
 Models expected long-term-care cost exposure (custodial home care, assisted living, or nursing home)
 and compares **self-insure vs a traditional LTC policy vs a hybrid (life/LTC) policy** on an
@@ -234,7 +255,9 @@ For whichever tool you called:
   `analyze_long_term_care` / `analyze_relocation`; `analyze_guaranteed_income` →
   `analyze_withdrawal_strategy` / `optimize_social_security` / `analyze_bond_ladder` /
   `generate_financial_plan`; `analyze_bond_ladder` → `analyze_withdrawal_strategy` /
-  `optimize_social_security` / `generate_financial_plan`; `analyze_long_term_care` →
+  `optimize_social_security` / `analyze_cash_ladder` / `generate_financial_plan`;
+  `analyze_cash_ladder` → `analyze_bond_ladder` / `analyze_withdrawal_strategy` (the safe-cash sleeve
+  pairs with the brokerage Treasury/TIPS floor and the market-funded drawdown); `analyze_long_term_care` →
   `analyze_insurance_needs` / `analyze_survivor_stress_test` / `analyze_guaranteed_income` /
   `analyze_bond_ladder`; `analyze_rmd` → `analyze_roth_conversion` (spend the runway years) /
   `analyze_irmaa` (RMDs lift MAGI into the next surcharge cliff) / `analyze_withdrawal_strategy`;
