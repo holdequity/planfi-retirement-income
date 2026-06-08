@@ -1,7 +1,7 @@
 ---
 name: retirement-income
-version: 1.2.0
-description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, or how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?".
+version: 1.3.0
+description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection), or how to handle long-term-care cost exposure (self-insure vs an LTC/hybrid policy, and the hit to a surviving spouse) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?", "will long-term care wipe out my survivor's plan? should I self-insure or buy an LTC/hybrid policy?".
 ---
 
 # Retirement Income
@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -143,6 +143,25 @@ REQUIRED: `annual_spend`, `years`. Optional: `ladder_type` (`tips` | `nominal` |
 analyze_bond_ladder({ annual_spend: 60000, years: 10, ladder_type: 'tips' })
 ```
 
+### "Will long-term care wipe out my plan? Should I self-insure or buy a policy?" → `analyze_long_term_care`
+Models expected long-term-care cost exposure (custodial home care, assisted living, or nursing home)
+and compares **self-insure vs a traditional LTC policy vs a hybrid (life/LTC) policy** on an
+after-tax present-value basis — including the tail-risk note (self-insure can win the expected case
+but lose at P90) and the impact on a **surviving spouse's** plan. The largest uninsured late-life
+spending shock. Self-orchestrates from sparse input — server fills a care-cost table by `care_type`,
+care probability, duration, and start age, all surfaced in `assumed_defaults[]`.
+KEY PARAMS: `current_age`; `strategy` (`self_insure` | `traditional` | `hybrid`); `care_type`
+(`custodial_home` | `assisted_living` | `nursing_home`). Optional: `care_start_age` (default 84),
+`care_duration_years` (default 3), `annual_care_cost_today` (else from the `care_type` table),
+`probability_need_care` (default 0.70), `life_expectancy`, `discount_rate`, `filing_status`,
+`married`, `survivor_spending_factor`, a `policy` block (`annual_premium`, `premium_pay_years`,
+`annual_benefit`, `benefit_period_years`, `elimination_period_days`, `inflation_protection_pct`,
+`return_of_premium_or_death_benefit`), `tax_year`, `plan_id`, `overrides`.
+
+```
+analyze_long_term_care({ current_age: 60, care_type: 'assisted_living', strategy: 'self_insure', married: true })
+```
+
 ## Step 3 — Surface results honestly
 
 For whichever tool you called:
@@ -163,16 +182,18 @@ For whichever tool you called:
 - **Follow `next_actions[]`** — each is `{ tool, why, prefilled_args }` (carrying `{ plan_id }` when
   available). Use the server-suggested chains rather than guessing. The actual edges among these
   tools: `analyze_withdrawal_strategy` → `analyze_guaranteed_income` / `analyze_bond_ladder` /
-  `analyze_relocation`; `analyze_guaranteed_income` → `analyze_withdrawal_strategy` /
-  `optimize_social_security` / `analyze_bond_ladder` / `generate_financial_plan`; `analyze_bond_ladder`
-  → `analyze_withdrawal_strategy` / `optimize_social_security` / `generate_financial_plan`.
-  (`optimize_social_security`, `analyze_healthcare_bridge`, and `analyze_estate_exposure` currently
-  emit no outgoing `next_actions` edges.)
+  `analyze_long_term_care` / `analyze_relocation`; `analyze_guaranteed_income` →
+  `analyze_withdrawal_strategy` / `optimize_social_security` / `analyze_bond_ladder` /
+  `generate_financial_plan`; `analyze_bond_ladder` → `analyze_withdrawal_strategy` /
+  `optimize_social_security` / `generate_financial_plan`; `analyze_long_term_care` →
+  `analyze_insurance_needs` / `analyze_survivor_stress_test` / `analyze_guaranteed_income` /
+  `analyze_bond_ladder`. (`optimize_social_security`, `analyze_healthcare_bridge`, and
+  `analyze_estate_exposure` currently emit no outgoing `next_actions` edges.)
 - **For a share link:** `optimize_social_security` always returns a `share_url`;
   `analyze_estate_exposure`, `analyze_withdrawal_strategy`, `analyze_healthcare_bridge`,
-  `analyze_guaranteed_income`, and `analyze_bond_ladder` return a `share_url` only when you pass a
-  `plan_id` that resolves a plan. Surface whichever `share_url` the tool returns; otherwise run
-  `generate_financial_plan` (Step 1) for one.
+  `analyze_guaranteed_income`, `analyze_bond_ladder`, and `analyze_long_term_care` return a
+  `share_url` only when you pass a `plan_id` that resolves a plan. Surface whichever `share_url` the
+  tool returns; otherwise run `generate_financial_plan` (Step 1) for one.
 
 ## Recommended call sequence (typical session)
 
@@ -216,7 +237,21 @@ a QLAC use `decision_type: 'qlac'` to see the RMD deferred on the premium. Follo
 sharable link), and consider the **tax-optimizer** skill — turning on pension income shifts your
 marginal bracket and changes your Roth-conversion room in the pre-RMD gap years.
 
-*(All three examples use fictional figures — never reuse a real user's numbers in documentation.)*
+**4.** *"We're 60, married, and terrified long-term care will wipe out whoever's left — should we
+self-insure or buy a policy?"*
+→ `analyze_long_term_care({ current_age: 60, care_type: 'assisted_living', strategy: 'self_insure',
+married: true })`. Lead with the expected after-tax PV cost exposure and the three-way comparison
+(self-insure vs traditional vs hybrid), then the tail-risk note (self-insure may win the expected
+case but lose at P90) and the surviving-spouse impact. To price a policy, re-run with
+`strategy: 'traditional'` (or `'hybrid'`) and a `policy` block. Follow the tool's `next_actions[]` —
+sizing life/disability coverage (`analyze_insurance_needs`), stress-testing the survivor
+(`analyze_survivor_stress_test`), or pre-funding the care with a `analyze_guaranteed_income` floor or
+a `analyze_bond_ladder`. Read back each `assumed_defaults[]` entry (e.g. care start age 84, duration
+3 yrs, probability of needing care 0.70, the care-cost table value). Neighboring features outside
+this skill: `analyze_estate_exposure` (in this skill) and `analyze_healthcare_bridge` for the
+pre-Medicare gap.
+
+*(All four examples use fictional figures — never reuse a real user's numbers in documentation.)*
 
 ## Notes
 
