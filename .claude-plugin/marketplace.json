@@ -12,8 +12,8 @@
     {
       "name": "retirement-income",
       "source": "./skills/retirement-income",
-      "description": "Plan retirement decumulation: tax-smart withdrawal order, dynamic/variable spending strategies (Guyton-Klinger guardrails, VPW, spending smile, bucket+buffer vs a static 4% SWR), Social Security claiming age, ACA healthcare bridge before Medicare, estate-tax exposure, guaranteed income (pension lump-sum vs lifetime monthly, SPIA/QLAC vs DIY portfolio), a bond/TIPS ladder income floor that guarantees the first N years of spending (sequence-of-returns protection), and long-term-care cost exposure with a self-insure vs traditional vs hybrid LTC-policy tradeoff (including the impact on a surviving spouse's plan). Thin orchestration over the planfi MCP.",
-      "version": "1.3.0",
+      "description": "Plan retirement decumulation: tax-smart withdrawal order, dynamic/variable spending strategies (Guyton-Klinger guardrails, VPW, spending smile, bucket+buffer vs a static 4% SWR), Social Security claiming age, ACA healthcare bridge before Medicare, projected RMDs with a tax-torpedo and Roth-conversion-runway readout (the low-income years before RMDs start at 73/75), Medicare IRMAA tier and surcharge-cliff lookup, estate-tax exposure, guaranteed income (pension lump-sum vs lifetime monthly, SPIA/QLAC vs DIY portfolio), a bond/TIPS ladder income floor that guarantees the first N years of spending (sequence-of-returns protection), and long-term-care cost exposure with a self-insure vs traditional vs hybrid LTC-policy tradeoff (including the impact on a surviving spouse's plan). Thin orchestration over the planfi MCP.",
+      "version": "1.4.0",
       "license": "MIT",
       "author": {
         "name": "holdequity",

@@ -1,6 +1,6 @@
 ---
 name: retirement-income
-version: 1.3.0
+version: 1.4.0
 description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection), or how to handle long-term-care cost exposure (self-insure vs an LTC/hybrid policy, and the hit to a surviving spouse) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?", "will long-term care wipe out my survivor's plan? should I self-insure or buy an LTC/hybrid policy?".
 ---
 
@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -182,6 +182,35 @@ KEY PARAMS: `portfolio_balance`, `annual_spend`, `current_age`, `years`. Optiona
 analyze_spending_strategy({ portfolio_balance: 1500000, annual_spend: 60000, current_age: 62, years: 30 })
 ```
 
+### "Will my RMDs cause a tax torpedo / how much Roth-conversion runway do I have before 73 or 75?" → `analyze_rmd`
+Projects required minimum distributions on the traditional balance: the SECURE-2.0 RMD start age
+(73 or 75, derived from birth year), the **conversion-runway years** before RMDs begin, the first RMD
+amount/divisor, the lifetime RMD total and tax, the peak-RMD year, and a **tax-torpedo** flag
+(whether the first RMD pushes your marginal rate above where it would be without it) plus a
+year-by-year schedule. All values are real / today's dollars. This is the *why* behind a
+Roth-conversion ladder — the runway years are the low-income window to convert before RMDs stack.
+REQUIRED: `traditional_balance`, `current_age`. Optional: `birth_year` (drives 73 vs 75),
+`filing_status` (`single` | `married_joint`), `other_taxable_income` (for the torpedo / marginal-rate
+math), `growth_rate` (REAL, default 0.05), `life_expectancy` (default 92), `tax_year`.
+
+```
+analyze_rmd({ traditional_balance: 1000000, current_age: 65, birth_year: 1961, other_taxable_income: 50000 })
+```
+
+### "What Medicare IRMAA surcharge will my income trigger / how do I stay under the next cliff?" → `analyze_irmaa`
+Maps MAGI to the Medicare IRMAA tier: the annual and monthly Part B/D surcharge, the landed tier
+index, the first surcharge threshold, the **next cliff** threshold with **headroom** to it, and the
+step-up in surcharge if you cross it. Reflects the **2-year MAGI lookback** (the income tax year is
+two years before the Medicare year) and that for `married_joint` the household MAGI covers both
+spouses. Pairs with `analyze_rmd` / `analyze_roth_conversion` — RMDs and conversions both raise MAGI
+into the next IRMAA cliff.
+REQUIRED: `magi`. Optional: `filing_status` (`single` | `married_joint`), `current_age` (default 65),
+`tax_year`.
+
+```
+analyze_irmaa({ magi: 150000, filing_status: 'single' })
+```
+
 ## Step 3 — Surface results honestly
 
 For whichever tool you called:
@@ -207,7 +236,10 @@ For whichever tool you called:
   `generate_financial_plan`; `analyze_bond_ladder` → `analyze_withdrawal_strategy` /
   `optimize_social_security` / `generate_financial_plan`; `analyze_long_term_care` →
   `analyze_insurance_needs` / `analyze_survivor_stress_test` / `analyze_guaranteed_income` /
-  `analyze_bond_ladder`. (`optimize_social_security`, `analyze_healthcare_bridge`, and
+  `analyze_bond_ladder`; `analyze_rmd` → `analyze_roth_conversion` (spend the runway years) /
+  `analyze_irmaa` (RMDs lift MAGI into the next surcharge cliff) / `analyze_withdrawal_strategy`;
+  `analyze_irmaa` → `analyze_rmd` / `analyze_roth_conversion` (both move MAGI relative to the cliff).
+  (`optimize_social_security`, `analyze_healthcare_bridge`, and
   `analyze_estate_exposure` currently emit no outgoing `next_actions` edges.) `analyze_spending_strategy`
   (the spend-*amount* question) is the natural companion to `analyze_withdrawal_strategy` (the
   account-*order* question) and to `run_backtesting` (sequence-of-returns risk on the chosen rule).
@@ -273,7 +305,27 @@ a `analyze_bond_ladder`. Read back each `assumed_defaults[]` entry (e.g. care st
 this skill: `analyze_estate_exposure` (in this skill) and `analyze_healthcare_bridge` for the
 pre-Medicare gap.
 
-*(All four examples use fictional figures — never reuse a real user's numbers in documentation.)*
+**5.** *"I'm 65 with $1M in a traditional IRA and about $50k of other income — will my RMDs cause a
+tax torpedo, and how many years do I have to convert before they hit?"*
+→ `analyze_rmd({ traditional_balance: 1000000, current_age: 65, birth_year: 1961,
+other_taxable_income: 50000 })`. Lead with the RMD start age (73 or 75 from birth year) and the
+conversion-runway years before it, then the first RMD amount/divisor, lifetime RMD tax, and whether
+`tax_torpedo.triggered` is true (the first RMD pushing your marginal rate up). The runway years are
+the low-income window for a Roth-conversion ladder — hand off to the **tax-optimizer** skill
+(`analyze_roth_conversion`) to fill that bracket, and run `analyze_irmaa` to check the RMDs don't
+push MAGI over a Medicare surcharge cliff. Read back each `assumed_defaults[]` entry (growth rate,
+life expectancy 92, filing status).
+
+**6.** *"My retirement MAGI lands around $150k single — what Medicare IRMAA surcharge does that
+trigger, and how much headroom before the next cliff?"*
+→ `analyze_irmaa({ magi: 150000, filing_status: 'single' })`. Lead with the annual/monthly Part B/D
+surcharge and the landed tier, then the next-cliff threshold and the **headroom** to it (and the
+step-up if you cross it). Remind them of the **2-year lookback** (this Medicare year reflects income
+two years back) and that for `married_joint` the surcharge applies to both spouses. Then check
+`analyze_rmd` / the **tax-optimizer** skill — RMDs and Roth conversions both raise MAGI toward the
+cliff, so plan conversions to stay just under it.
+
+*(All six examples use fictional figures — never reuse a real user's numbers in documentation.)*
 
 ## Notes
 
