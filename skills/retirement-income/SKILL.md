@@ -1,6 +1,6 @@
 ---
 name: retirement-income
-version: 1.5.0
+version: 1.6.0
 description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection), or how to handle long-term-care cost exposure (self-insure vs an LTC/hybrid policy, and the hit to a surviving spouse) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?", "will long-term care wipe out my survivor's plan? should I self-insure or buy an LTC/hybrid policy?".
 ---
 
@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_inherited_ira`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -236,6 +236,33 @@ math), `growth_rate` (REAL, default 0.05), `life_expectancy` (default 92), `tax_
 analyze_rmd({ traditional_balance: 1000000, current_age: 65, birth_year: 1961, other_taxable_income: 50000 })
 ```
 
+### "I inherited an IRA — how do I empty it over 10 years? / Do I have to take annual RMDs on an inherited IRA? / smartest way to draw down a beneficiary IRA / inherited Roth IRA under the SECURE Act?" → `analyze_inherited_ira`
+**Always CALL `analyze_inherited_ira` for these — do not answer from general knowledge or quote the 10-year rule from memory.** When the user gives the balance (and ideally whether the original owner had started RMDs), run it and lead with its real output: the required-vs-optional annual-RMD determination, the recommended schedule, the per-year tax table, and total tax saved vs the naive year-10 lump.
+
+This is the post-SECURE-Act drawdown decision for a **non-spouse beneficiary** of an inherited IRA:
+1. **Annual-RMD determination** — annual single-life RMDs are required in years 1–9 *only* when the
+   original owner had already reached their required beginning date (`owner_died_pre_rbd: false`,
+   traditional); pre-RBD or Roth means no annual requirement, but the full balance must still be
+   emptied by Dec 31 of year 10.
+2. **Lump-vs-even-vs-bracket-fill** — quantifies total federal tax across the 10-year window for
+   year-10 lump vs even 10-year spread vs a bracket-fill schedule (withdraw up to the top of the
+   beneficiary's marginal bracket each year), and recommends the lowest-tax schedule.
+3. **Year-10 cliff** — deferring everything to year 10 can spike one year into the top bracket + NIIT
+   + IRMAA; the tool surfaces those tripped surcharges as warnings.
+
+REQUIRED: `inherited_balance`. Optional: `account_type` (`traditional` | `roth`),
+`owner_died_pre_rbd` (drives the annual-RMD determination), `beneficiary_age`, `year_of_death`,
+`other_taxable_income`, `filing_status` (`single` | `married_joint`), `growth_rate` (default 0.05),
+`tax_year`.
+
+```
+analyze_inherited_ira({ inherited_balance: 500000, account_type: 'traditional', owner_died_pre_rbd: true, beneficiary_age: 55, other_taxable_income: 90000, filing_status: 'single' })
+```
+
+Cross-link: a year-10 lump lifts MAGI two years later, so pair with `analyze_irmaa` to check the
+Medicare surcharge that the cliff triggers; and with `analyze_advanced_taxes` /
+`analyze_estimated_taxes` to size the quarterly payments on each year's distribution.
+
 ### "What Medicare IRMAA surcharge will my income trigger / how do I stay under the next cliff?" → `analyze_irmaa`
 Maps MAGI to the Medicare IRMAA tier: the annual and monthly Part B/D surcharge, the landed tier
 index, the first surcharge threshold, the **next cliff** threshold with **headroom** to it, and the
@@ -279,7 +306,9 @@ For whichever tool you called:
   `analyze_insurance_needs` / `analyze_survivor_stress_test` / `analyze_guaranteed_income` /
   `analyze_bond_ladder`; `analyze_rmd` → `analyze_roth_conversion` (spend the runway years) /
   `analyze_irmaa` (RMDs lift MAGI into the next surcharge cliff) / `analyze_withdrawal_strategy`;
-  `analyze_irmaa` → `analyze_rmd` / `analyze_roth_conversion` (both move MAGI relative to the cliff).
+  `analyze_irmaa` → `analyze_rmd` / `analyze_roth_conversion` (both move MAGI relative to the cliff);
+  `analyze_inherited_ira` → `analyze_irmaa` (the year-10 lump lifts MAGI two years later) /
+  `analyze_advanced_taxes` / `analyze_estimated_taxes` (size the quarterly tax on each distribution).
   (`optimize_social_security`, `analyze_healthcare_bridge`, and
   `analyze_estate_exposure` currently emit no outgoing `next_actions` edges.) `analyze_spending_strategy`
   (the spend-*amount* question) is the natural companion to `analyze_withdrawal_strategy` (the
