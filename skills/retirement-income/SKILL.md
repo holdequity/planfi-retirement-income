@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_inherited_ira`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_inherited_ira`, `analyze_disability_income`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -321,6 +321,43 @@ REQUIRED: `magi`. Optional: `filing_status` (`single` | `married_joint`), `curre
 ```
 analyze_irmaa({ magi: 150000, filing_status: 'single' })
 ```
+
+### "What happens to my income if I become disabled? / how much will SSDI pay me? / what's my disability protection gap? / does my group LTD plus SSDI replace enough of my paycheck? / is my disability benefit taxable? / stress-test losing my income to disability" → `analyze_disability_income`
+**Always CALL `analyze_disability_income` for these — do not answer from general knowledge / quote
+rules of thumb ("SSDI replaces ~40%", "60% LTD") from memory.** When the user gives the numbers
+(their AIME or earnings, spending, and group-LTD %), run it and lead with its real output: the
+estimated monthly SSDI, the combined SSDI + LTD after the dollar-for-dollar offset, the after-tax
+replacement ratio for each premium-payer case, the elimination-period and Medicare-bridge gap costs,
+the SGA cap, and the protection shortfall.
+
+Quantifies the working-age disability income shock and protection gap. It computes, all in **today's
+dollars**:
+- **SSDI benefit estimate** — the primary insurance amount from AIME via the bend-point formula; SSDI
+  pays the **full un-reduced PIA** and auto-converts to the retirement benefit at full retirement age
+  with **no reduction**.
+- **Elimination period + Medicare bridge** — the 5-month wait before benefits start and the further
+  24-month wait before Medicare, each priced as an out-of-pocket coverage-gap cost.
+- **SGA earnings cap** — benefits stop if earned income exceeds the substantial-gainful-activity
+  threshold ($1,620/mo, $2,700/mo if blind in 2026).
+- **Group LTD coordination** — own-occ vs any-occ definitions; the LTD benefit is offset
+  **dollar-for-dollar** by SSDI, so the combined benefit ≈ the LTD target %, **not** LTD + SSDI.
+- **Taxability flip** — employer-paid LTD premiums make the benefit **taxable**; employee-paid
+  (after-tax) premiums make it **tax-free**; returns the after-tax replacement ratio for both.
+
+REQUIRED: `aime`. Optional (fall back to plan/defaults): `annual_salary`,
+`household_annual_spend`, `filing_status`, `group_ltd_percent`, `ltd_premiums_employer_paid`,
+`ltd_definition`, `target_replacement_ratio`, `ssdi_taxable`, `blind`, `earned_income_while_disabled`,
+`monthly_healthcare_cost`, `tax_year`, `plan_id`.
+
+```
+analyze_disability_income({ aime: 6000, annual_salary: 108000, household_annual_spend: 72000, group_ltd_percent: 0.60, ltd_premiums_employer_paid: true, filing_status: 'single' })
+```
+
+Cross-link: pair with **`analyze_insurance_needs`** for the broader life + long-term-disability
+coverage *sizing* (this tool quantifies the SSDI + group-LTD income *gap*; that one sizes the policy
+to close it), and with **`optimize_social_security`** — the SSDI benefit auto-converts to the
+**retirement benefit at the same un-reduced PIA at full retirement age**, so the disability and
+Social Security claiming decisions share the same earnings record.
 
 ## Step 3 — Surface results honestly
 
