@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_medicare_enrollment`, `analyze_inherited_ira`, `analyze_disability_income`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_ibond_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_medicare_enrollment`, `analyze_inherited_ira`, `analyze_disability_income`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -226,6 +226,42 @@ REQUIRED: `annual_need`, `years`. Optional: `vehicle` (`cd` | `ibond` | `ee` | `
 ```
 analyze_cash_ladder({ annual_need: 40000, years: 5, vehicle: 'cd', cd_type: 'brokered' })
 ```
+
+### "Build me an I-bond ladder / how much can I buy in I-bonds this year / I-bonds vs TIPS after tax / what's my early-redemption penalty / TreasuryDirect $10k limit across me and my spouse / can I beat inflation with Series I bonds?" → `analyze_ibond_ladder`
+**Always CALL `analyze_ibond_ladder` for these — do not answer from general knowledge / quote rules
+of thumb from memory** (the $10k cap, the composite-rate formula, the 12-month lockup, the
+3-months-interest penalty, the I-bond-vs-TIPS tax-deferral tradeoff). When the user gives the numbers,
+run it and lead with its real output: the per-year purchase schedule under the cap, the projected
+composite-rate accrual and redemption value net of any early penalty, the I-bond-vs-TIPS after-tax-real
+comparison, and the recommended purchase plan.
+
+This is the I-bond / TIPS-specific ladder planner — distinct from `analyze_cash_ladder` and
+`analyze_bond_ladder` because it models the deterministic cap / lockup / penalty / phantom-tax math
+those nominal engines do not:
+- **Purchase cap** — the hard **$10,000 per person per calendar year** TreasuryDirect electronic limit,
+  plus an extra **$5,000 in paper I-bonds via a federal tax refund**; models a multi-year ladder
+  accumulating under the annual cap across **1 or 2 spouses** (flags any over-cap amount).
+- **Composite rate** — fixed rate + (2 × semiannual inflation) + (fixed × semiannual inflation), reset
+  every 6 months; projects accrual from a supplied fixed rate + assumed inflation.
+- **Lockup + penalty** — the **12-month** fully-locked minimum hold, and the **3-months-of-interest**
+  early-redemption penalty if redeemed before **5 years** (no penalty after 5).
+- **I-bonds vs TIPS** — TIPS principal adjusts with CPI and pay a real coupon with no purchase cap, but
+  are taxed annually on **phantom inflation accruals** (vs I-bonds tax-DEFERRED until redemption); the
+  tool compares after-tax real yield and liquidity and names a winner.
+- **Tax** — I-bond interest is federal-taxable (deferred), **state-tax-exempt**, and optionally
+  **federally tax-free if used for qualified education** (income-limited, with a MAGI phaseout).
+REQUIRED: `annualPurchaseTarget`, `holdYears`. Optional: `ladderYears`, `spouses` (1–2),
+`ibondFixedRate`, `assumedInflation`, `redeemAtYear` (triggers penalty/lockup math), `tipsRealYield`,
+`tipsCoupon`, `usedForQualifiedEducation`, `filingStatus` (`single` | `married_joint`),
+`otherTaxableIncome`, `stateFlatRate`, `tax_year`, `plan_id`, `overrides`.
+
+```
+analyze_ibond_ladder({ annualPurchaseTarget: 10000, holdYears: 5, spouses: 1, ibondFixedRate: 0.013, assumedInflation: 0.0344 })
+```
+
+Cross-link: use `analyze_ibond_ladder` for the I-bond/TIPS inflation-protected sleeve (cap, lockup,
+penalty, phantom-tax); `analyze_cash_ladder` for the broader CD / EE / I-bond near-term safe-cash mix;
+and `analyze_bond_ladder` for the brokerage Treasury/TIPS floor that funds the first N years of spend.
 
 ### "Will long-term care wipe out my plan? Should I self-insure or buy a policy?" → `analyze_long_term_care`
 Models expected long-term-care cost exposure (custodial home care, assisted living, or nursing home)
