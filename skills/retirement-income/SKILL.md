@@ -1,6 +1,6 @@
 ---
 name: retirement-income
-version: 1.6.0
+version: 1.7.0
 description: Plan retirement decumulation by orchestrating the public planfi MCP. Use whenever someone is at or near retirement and wants to know what order to draw down their accounts, when to claim Social Security, how to bridge health insurance before Medicare at 65, whether they have estate-tax exposure, how to build a guaranteed bond/TIPS income floor for the first N years (sequence-of-returns protection), or how to handle long-term-care cost exposure (self-insure vs an LTC/hybrid policy, and the hit to a surviving spouse) — e.g. "what's the tax-smart drawdown order for my taxable / traditional / Roth accounts?", "when should I claim Social Security?", "what will ACA coverage cost me until 65 if I retire early?", "will my estate owe federal estate tax?", "can I build a Treasury/TIPS ladder to floor my first 10 years of spending?", "will long-term care wipe out my survivor's plan? should I self-insure or buy an LTC/hybrid policy?".
 ---
 
@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_inherited_ira`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_inherited_ira`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -128,6 +128,51 @@ analyze_guaranteed_income({
   current_age: 63, life_expectancy: 90, filing_status: 'married_joint'
 })
 ```
+
+For the **employer/government defined-benefit pension** election specifically — the single-life
+vs joint-and-survivor (50%/75%/100%) reduction, the actuarial early-vs-normal claiming reduction,
+and the COLA vs non-COLA real-erosion view — use **`analyze_defined_benefit`** (next section); it owns
+the survivor and early-claiming actuarial detail. Use `analyze_guaranteed_income` here for the broader
+lump-vs-lifetime / SPIA / QLAC-vs-DIY-portfolio framing.
+
+### "Should I take my pension as a lump sum or monthly? / 50% vs 75% vs 100% survivor benefit? / claim my pension early or wait until normal retirement age? / does my pension have a COLA — what is it really worth over 25 years?" → `analyze_defined_benefit`
+**Always CALL `analyze_defined_benefit` for these — do not answer from general knowledge / quote
+rules of thumb from memory.** When the user gives the numbers, run it and lead with its real output.
+
+The full **defined-benefit pension** election for a worker with a traditional employer or government
+pension. It computes, all in **real / today's dollars**:
+- **Lump sum vs lifetime annuity** — the present value of the monthly single-life stream (discounted
+  by a real rate over life expectancy) vs the offered lump-sum cashout, the **implied real IRR** of
+  taking the annuity, the **break-even age** at which cumulative annuity benefit overtakes the lump.
+- **Survivor / joint-and-survivor election** — single-life vs 50% / 75% / 100% J&S: the reduced
+  monthly benefit vs the spousal protection, and the break-even on the survivor's expected remaining
+  years.
+- **COLA vs non-COLA** — the real erosion of a fixed (non-COLA) pension over a 25–30 year retirement,
+  and the present value adjusted for whether the pension has a cost-of-living adjustment.
+- **Early vs normal claiming** — the actuarial reduction for claiming before normal retirement age.
+It also returns the **real income floor** the pension buys (survivor-adjusted monthly × 12) — which
+folds into the forecast like Social Security / guaranteed income, reducing the portfolio-funded spend —
+plus the **after-tax monthly income** and a recommended election with its deciding comparison.
+KEY PARAMS: `singleLifeMonthly` (the base single-life monthly benefit at the claim age). Optional:
+`lumpSum` (the offered cashout — enables the lump-vs-annuity branch), `currentAge` (default 65),
+`claimAge` (default 65), `normalRetirementAge` (default 65), `lifeExpectancy` (default 90),
+`hasCola` / `colaRate` / `inflationRate` (COLA + real-erosion view), `discountRate` (default 0.03),
+`survivorOption` (`single` | `joint_50` | `joint_75` | `joint_100`), `survivorReducedMonthly`,
+`survivorLifeExpectancy`, `earlyReductionPerYear` (plan-specific actuarial reduction; else SS-style),
+`filingStatus` (`single` | `married_joint`), `otherTaxableIncome`, `tax_year`, `plan_id`, `overrides`.
+
+```
+analyze_defined_benefit({
+  singleLifeMonthly: 2000, lumpSum: 350000, currentAge: 65, claimAge: 65,
+  lifeExpectancy: 90, discountRate: 0.03, hasCola: false
+})
+```
+
+Cross-link: this is the **pension-election actuarial companion** to `analyze_guaranteed_income` — use
+`analyze_defined_benefit` for the survivor / early-claiming / COLA detail of an *employer DB pension*,
+and `analyze_guaranteed_income` for the broader SPIA / QLAC / DIY-portfolio framing of a guaranteed
+income stream. Pairs with `analyze_withdrawal_strategy` (the income floor reduces the market-funded
+draw) and `optimize_social_security` (coordinate the two guaranteed-income claiming decisions).
 
 ### "Should I buy a fixed-indexed / RILA / MYGA / variable annuity (GLWB) — and how is a non-qualified annuity taxed?" → `analyze_annuity_products`
 Evaluates **accumulation-phase** annuity products beyond a level/COLA immediate stream — a **MYGA**
@@ -395,7 +440,20 @@ two years back) and that for `married_joint` the surcharge applies to both spous
 `analyze_rmd` / the **tax-optimizer** skill — RMDs and Roth conversions both raise MAGI toward the
 cliff, so plan conversions to stay just under it.
 
-*(All six examples use fictional figures — never reuse a real user's numbers in documentation.)*
+**7.** *"My pension offers a $350k lump sum or $2,000/mo for life with no COLA, I'm 65 — which wins,
+and should I take the 100% survivor option for my spouse?"*
+→ `analyze_defined_benefit({ singleLifeMonthly: 2000, lumpSum: 350000, currentAge: 65, claimAge: 65,
+lifeExpectancy: 90, discountRate: 0.03, hasCola: false })`. Lead with the PV comparison (lifetime
+annuity vs the lump sum) and its net advantage, the **implied real IRR** of taking the annuity, and
+the **break-even age**; then the non-COLA real-erosion view (what the fixed $2,000/mo is worth in
+year 25), and — re-running with `survivorOption: 'joint_100'` (+ `survivorReducedMonthly` if the plan
+states it) — the survivor break-even vs the spouse's expected remaining years. Note the real income
+floor it buys folds into the forecast like Social Security. Read back each `assumed_defaults[]` entry
+(discount rate, life expectancy, derived survivor reduction, inflation rate). For the broader
+SPIA/QLAC-vs-DIY framing of any guaranteed stream, pair with `analyze_guaranteed_income`; coordinate
+the claiming with `optimize_social_security`.
+
+*(All seven examples use fictional figures — never reuse a real user's numbers in documentation.)*
 
 ## Notes
 
