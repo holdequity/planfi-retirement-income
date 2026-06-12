@@ -17,7 +17,7 @@ Each tool applies its own server-side defaults and reports them back in a struct
 
 This skill uses these tools (may be namespaced, e.g. `mcp__planfi__analyze_withdrawal_strategy`):
 `analyze_withdrawal_strategy`, `optimize_social_security`, `analyze_healthcare_bridge`,
-`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_inherited_ira`, `analyze_disability_income`, plus optional `generate_financial_plan`
+`analyze_estate_exposure`, `analyze_guaranteed_income`, `analyze_defined_benefit`, `analyze_annuity_products`, `analyze_bond_ladder`, `analyze_cash_ladder`, `analyze_long_term_care`, `analyze_spending_strategy`, `analyze_rmd`, `analyze_irmaa`, `analyze_medicare_enrollment`, `analyze_inherited_ira`, `analyze_disability_income`, plus optional `generate_financial_plan`
 (for `plan_id` chaining + a `share_url`). Use whichever name your environment exposes (bare or `mcp__planfi__`-prefixed);
 below they are written bare.
 
@@ -322,6 +322,43 @@ REQUIRED: `magi`. Optional: `filing_status` (`single` | `married_joint`), `curre
 analyze_irmaa({ magi: 150000, filing_status: 'single' })
 ```
 
+### "When do I have to sign up for Medicare? / will I owe a late-enrollment penalty? / I'm turning 65 — what's my enrollment window? / I'm still working at 65 on my employer plan, do I need Part B? / I'm on COBRA, does that count? / I missed my Medicare sign-up, how much will it cost me forever? / when does my Special Enrollment Period / Medigap window close? / do I have to stop HSA contributions before Medicare?" → `analyze_medicare_enrollment`
+**Always CALL `analyze_medicare_enrollment` for these — do not answer from general knowledge / quote
+the "7-month window", "10% per year", or "COBRA counts" rules of thumb from memory.** When the user
+gives the numbers (age / months since 65, months uncovered, coverage type), run it and lead with its
+real output: the enrollment-window status, whether a penalty applies and its **permanent monthly +
+lifetime dollar** cost (Part B and Part D), the creditable-coverage determination, the SEP deadline,
+and the Medigap guaranteed-issue deadline.
+
+This is the enrollment-TIMING and late-PENALTY side of Medicare — **distinct from `analyze_irmaa`**,
+which owns the income-based surcharge. It computes:
+- **Initial Enrollment Period (IEP)** — the 7-month window (3 months before through 3 months after the
+  65th-birthday month); flags whether you're inside it (`before_iep` / `inside_iep` / `iep_closed` /
+  `in_sep`).
+- **Part B late penalty** — a PERMANENT 10% surcharge on the Part B base premium for each full
+  12-month period eligible-but-unenrolled without creditable coverage (only full years count), as a
+  monthly and lifetime-dollar figure.
+- **Part D late penalty** — 1% of the national base beneficiary premium per uncovered month, also
+  permanent.
+- **Creditable-coverage test** for working past 65 on an employer plan or COBRA — **COBRA is NOT
+  creditable for Part B** (the penalty still accrues), and the **HSA interaction** (stop HSA
+  contributions 6 months before Medicare enrollment).
+- **Special Enrollment Period (SEP)** — the 8-month window after losing employer coverage that avoids
+  the penalty, with the deadline.
+- **Medigap** — the one-time 6-month guaranteed-issue window opening at Part B enrollment.
+
+REQUIRED: none (defaults to age 65). Optional: `current_age`, `birth_month`,
+`months_eligible_unenrolled_part_b`, `months_eligible_unenrolled_part_d`, `has_creditable_coverage`,
+`coverage_type` (`employer` | `cobra` | `marketplace` | `none`), `employer_coverage_end_months_ago`,
+`contributing_to_hsa`, `enrolled_in_part_b`, `part_b_enrollment_months_ago`, `tax_year`, `plan_id`.
+
+```
+analyze_medicare_enrollment({ current_age: 66, months_eligible_unenrolled_part_b: 30, has_creditable_coverage: false })
+```
+
+Cross-link: after settling enrollment timing, run `analyze_irmaa` to size the income-based surcharge,
+and `analyze_healthcare_bridge` for the pre-65 coverage that bridges to Medicare.
+
 ### "What happens to my income if I become disabled? / how much will SSDI pay me? / what's my disability protection gap? / does my group LTD plus SSDI replace enough of my paycheck? / is my disability benefit taxable? / stress-test losing my income to disability" → `analyze_disability_income`
 **Always CALL `analyze_disability_income` for these — do not answer from general knowledge / quote
 rules of thumb ("SSDI replaces ~40%", "60% LTD") from memory.** When the user gives the numbers
@@ -389,6 +426,8 @@ For whichever tool you called:
   `analyze_bond_ladder`; `analyze_rmd` → `analyze_roth_conversion` (spend the runway years) /
   `analyze_irmaa` (RMDs lift MAGI into the next surcharge cliff) / `analyze_withdrawal_strategy`;
   `analyze_irmaa` → `analyze_rmd` / `analyze_roth_conversion` (both move MAGI relative to the cliff);
+  `analyze_medicare_enrollment` → `analyze_irmaa` (size the income-based surcharge once enrollment
+  timing is settled) / `analyze_healthcare_bridge` (pre-65 coverage that bridges to Medicare);
   `analyze_inherited_ira` → `analyze_irmaa` (the year-10 lump lifts MAGI two years later) /
   `analyze_advanced_taxes` / `analyze_estimated_taxes` (size the quarterly tax on each distribution).
   (`optimize_social_security`, `analyze_healthcare_bridge`, and
@@ -397,7 +436,8 @@ For whichever tool you called:
   account-*order* question) and to `run_backtesting` (sequence-of-returns risk on the chosen rule).
 - **For a share link:** `optimize_social_security` always returns a `share_url`;
   `analyze_estate_exposure`, `analyze_withdrawal_strategy`, `analyze_healthcare_bridge`,
-  `analyze_guaranteed_income`, `analyze_bond_ladder`, and `analyze_long_term_care` return a
+  `analyze_guaranteed_income`, `analyze_bond_ladder`, `analyze_long_term_care`, and
+  `analyze_medicare_enrollment` return a
   `share_url` only when you pass a `plan_id` that resolves a plan. Surface whichever `share_url` the
   tool returns; otherwise run `generate_financial_plan` (Step 1) for one.
 
